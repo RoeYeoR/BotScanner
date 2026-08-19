@@ -4,7 +4,7 @@ import requests
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
-# 1. Load Environment Variables (.env locally, GitHub Secrets on GitHub Actions)
+# 1. Load Environment Variables
 # ---------------------------------------------------------------------------
 load_dotenv()
 
@@ -15,24 +15,24 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SEEN_POSTS_FILE = "seen_posts.json"
 
 # ---------------------------------------------------------------------------
-# 2. Search Queries targeting LinkedIn posts in Israel
+# 2. Refined Search Queries (Focused on Hiring & Employers)
 # ---------------------------------------------------------------------------
 SEARCH_QUERIES = [
-    'site:linkedin.com/posts "junior" "israel" ("full stack" OR "fullstack" OR "software" OR "AI")',
-    'site:linkedin.com/posts "ג\'וניור" "ישראל" ("פולסטאק" OR "פול סטאק" OR "פיתוח" OR "תוכנה")',
+    # English queries targeting job posts
+    'site:linkedin.com/posts "junior" "israel" ("hiring" OR "we are hiring" OR "looking for a") ("full stack" OR "fullstack" OR "software" OR "AI")',
+    # Hebrew queries targeting recruiters/employers
+    'site:linkedin.com/posts ("ג\'וניור" OR "גוניור") "ישראל" ("מגייסים" OR "דרוש" OR "דרושה" OR "משרה") ("פולסטאק" OR "פול סטאק" OR "פיתוח")',
 ]
 
 # ---------------------------------------------------------------------------
-# 3. Filtering Keywords
+# 3. Enhanced Filtering Lists
 # ---------------------------------------------------------------------------
 REQUIRED_TECH = [
-    # Full Stack
     "full stack",
     "fullstack",
     "full-stack",
     "פול סטאק",
     "פולסטאק",
-    # AI & General Engineering
     "software",
     "ai",
     "developer",
@@ -40,23 +40,50 @@ REQUIRED_TECH = [
     "python",
     "backend",
     "frontend",
-    "llm",
-    "machine learning",
-    # Junior Terminology
-    "ג'וניור",
-    "גוניור",
-    "junior",
 ]
 
+# Words indicating someone is HIRING (Must contain at least one)
+HIRING_INDICATORS = [
+    "hiring",
+    "we're hiring",
+    "we are hiring",
+    "join our team",
+    "looking for a",
+    "open position",
+    "מגייסים",
+    "דרוש",
+    "דרושה",
+    "מחפשים",
+    "משרה",
+    "להגשת מועמדות",
+    "קורות חיים",
+    "cv",
+]
+
+# Strict exclusion list to discard job seekers, lawyers, courses, etc.
 EXCLUDE_WORDS = [
+    # Job seekers' phrases (Hebrew & English)
+    "מחפש עבודה",
+    "מחפשת עבודה",
+    "מחפש את המשרה",
+    "מחפשת את המשרה",
+    "looking for my first",
+    "open to work",
+    "סיימתי קורס",
+    "האקריו",
+    "hackeru",
+    "תיק עבודות",
+    "אשמח לעזרתכם",
+    "לייק קטן",
+    "תגובה מגניבה",
+    "looking for a junior role",
+    "looking for a full-stack",
+    # Irrelevant professions
     "lawyer",
     "legal",
     "עורך דין",
     "משפטים",
     "marketing",
-    "מחפש עבודה",
-    "looking for my first",
-    "open to work",
 ]
 
 # ---------------------------------------------------------------------------
@@ -65,7 +92,6 @@ EXCLUDE_WORDS = [
 
 
 def load_seen_posts():
-  """Loads previously recorded post URLs to avoid duplicates."""
   if os.path.exists(SEEN_POSTS_FILE):
     try:
       with open(SEEN_POSTS_FILE, "r", encoding="utf-8") as f:
@@ -77,19 +103,22 @@ def load_seen_posts():
 
 
 def save_seen_posts(seen_posts):
-  """Saves updated post URLs back to JSON file."""
   with open(SEEN_POSTS_FILE, "w", encoding="utf-8") as f:
     json.dump(list(seen_posts), f, ensure_ascii=False, indent=2)
 
 
 def send_telegram_message(text):
-  """Sends an alert to your Telegram bot."""
   if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     print("Error: Missing Telegram credentials.")
     return
 
   url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-  payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+  payload = {
+      "chat_id": TELEGRAM_CHAT_ID,
+      "text": text,
+      "parse_mode": "Markdown",
+      "disable_web_page_preview": False,
+  }
   try:
     response = requests.post(url, json=payload, timeout=10)
     if not response.ok:
@@ -99,18 +128,21 @@ def send_telegram_message(text):
 
 
 def is_relevant(title, snippet):
-  """Filters out non-tech roles, lawyers, and job seekers."""
   text = f"{title} {snippet}".lower()
 
-  # 1. Exclude non-tech or self-seeking posts
+  # 1. Immediately reject job seekers or irrelevant posts
   if any(bad in text for bad in EXCLUDE_WORDS):
     return False
 
-  # 2. Must explicitly mention Junior
+  # 2. Must explicitly mention "Junior"
   if "junior" not in text and "ג'וניור" not in text and "גוניור" not in text:
     return False
 
-  # 3. Must match relevant engineering/tech terms
+  # 3. Must contain at least one HIRING indicator (Employer focus)
+  if not any(hiring in text for hiring in HIRING_INDICATORS):
+    return False
+
+  # 4. Must match relevant tech keywords
   if any(tech in text for tech in REQUIRED_TECH):
     return True
 
@@ -118,13 +150,17 @@ def is_relevant(title, snippet):
 
 
 def fetch_google_results(query):
-  """Queries Serper API for LinkedIn posts indexed by Google."""
   if not SERPER_API_KEY:
     print("Error: Missing SERPER_API_KEY environment variable.")
     return []
 
   url = "https://google.serper.dev/search"
-  payload = json.dumps({"q": query, "gl": "il", "hl": "en", "num": 10})
+
+  # 'tbs': 'qdr:w' restricts Google Search results strictly to the PAST WEEK
+  payload = json.dumps(
+      {"q": query, "gl": "il", "hl": "en", "num": 10, "tbs": "qdr:w"}
+  )
+
   headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
 
   try:
@@ -151,7 +187,6 @@ def run_scanner():
       title = item.get("title", "")
       snippet = item.get("snippet", "")
 
-      # Skip if link was already alerted previously
       if link in seen_posts:
         continue
 
@@ -161,9 +196,9 @@ def run_scanner():
 
         message = (
             f"🚀 *New Junior Job Post Found!*\n\n"
-            f"*Title:* {title}\n"
-            f"*Snippet:* {snippet}\n\n"
-            f"🔗 [Open Post]({link})"
+            f"📌 *Title:* {title}\n"
+            f"📝 *Snippet:* {snippet}\n\n"
+            f"🔗 [Click here to view LinkedIn Post]({link})"
         )
         send_telegram_message(message)
 
