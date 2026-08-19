@@ -3,7 +3,7 @@ name: Hourly LinkedIn Job Scanner
 on:
   schedule:
     # Runs every 2 hours between 05:00 UTC and 17:00 UTC (7 runs total per day)
-    - cron: '0 5-17/2 * * *'
+    - cron: '0 4-16/2 * * *'
   workflow_dispatch:
   repository_dispatch:
     types: [telegram_trigger]
