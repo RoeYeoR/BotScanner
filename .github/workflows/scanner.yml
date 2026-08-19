@@ -2,12 +2,12 @@ name: Hourly LinkedIn Job Scanner
 
 on:
   schedule:
-    # Runs every hour at minute 0
+    # Runs every 2 hours between 05:00 UTC and 17:00 UTC (7 runs total per day)
     - cron: '0 5-17/2 * * *'
-  # Allows triggering the workflow manually
   workflow_dispatch:
+  repository_dispatch:
+    types: [telegram_trigger]
 
-# Grant write permissions to the runner to commit updated seen_posts.json
 permissions:
   contents: write
 
@@ -43,5 +43,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add seen_posts.json
-          git commit -m "Update seen posts database [skip ci]" || exit 0
+          git commit -m "Update seen posts history [skip ci]" || exit 0
           git push
