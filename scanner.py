@@ -15,75 +15,100 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SEEN_POSTS_FILE = "seen_posts.json"
 
 # ---------------------------------------------------------------------------
-# 2. Refined Search Queries (Focused on Hiring & Employers)
+# 2. Tightened Search Queries
 # ---------------------------------------------------------------------------
 SEARCH_QUERIES = [
-    # English queries targeting job posts
-    'site:linkedin.com/posts "junior" "israel" ("hiring" OR "we are hiring" OR "looking for a") ("full stack" OR "fullstack" OR "software" OR "AI")',
-    # Hebrew queries targeting recruiters/employers
-    'site:linkedin.com/posts ("ג\'וניור" OR "גוניור") "ישראל" ("מגייסים" OR "דרוש" OR "דרושה" OR "משרה") ("פולסטאק" OR "פול סטאק" OR "פיתוח")',
+    # English: Strict employer phrases for target roles in Israel
+    'site:linkedin.com/posts "junior" "israel" ("we are hiring" OR "we\'re hiring" OR "hiring a junior") ("full stack" OR "fullstack" OR "software engineer" OR "AI engineer" OR "AI developer")',
+    # Hebrew: Specific recruiter/company hiring terms
+    'site:linkedin.com/posts ("ג\'וניור" OR "גוניור") "ישראל" ("אנחנו מגייסים" OR "דרוש/ה" OR "מגייסים ג\'וניור") ("פולסטאק" OR "פול סטאק" OR "פיתוח" OR "אינטליגנציה מלאכותית")',
 ]
 
 # ---------------------------------------------------------------------------
-# 3. Enhanced Filtering Lists
+# 3. Targeted Role & Filtering Definitions
 # ---------------------------------------------------------------------------
-REQUIRED_TECH = [
+TARGET_ROLES = [
+    "ai engineer",
+    "ai developer",
     "full stack",
     "fullstack",
     "full-stack",
-    "פול סטאק",
-    "פולסטאק",
-    "software",
-    "ai",
-    "developer",
-    "engineer",
-    "python",
+    "software engineer",
+    "software developer",
     "backend",
     "frontend",
+    "פול סטאק",
+    "פולסטאק",
+    "מהנדס תוכנה",
+    "מפתח תוכנה",
+    "מפתח/ת",
+    "מהנדס/ת",
 ]
 
-# Words indicating someone is HIRING (Must contain at least one)
+# Actionable employer-side phrases indicating a real job opening
 HIRING_INDICATORS = [
-    "hiring",
-    "we're hiring",
     "we are hiring",
+    "we're hiring",
     "join our team",
-    "looking for a",
+    "hiring a junior",
+    "looking for a junior",
     "open position",
-    "מגייסים",
-    "דרוש",
-    "דרושה",
-    "מחפשים",
-    "משרה",
+    "אנחנו מגייסים",
+    "דרוש/ה",
+    "מגייסים ג'וניור",
+    "מגייסים גוניור",
+    "מגייסת",
+    "שלחו קורות חיים",
     "להגשת מועמדות",
-    "קורות חיים",
-    "cv",
+    "send your cv",
+    "apply at",
+    "apply here",
+    "send cv to",
 ]
 
-# Strict exclusion list to discard job seekers, lawyers, courses, etc.
+# Strict exclusions: Filters out job seekers, career tips, webinars & articles
 EXCLUDE_WORDS = [
-    # Job seekers' phrases (Hebrew & English)
+    # Job seekers
     "מחפש עבודה",
     "מחפשת עבודה",
     "מחפש את המשרה",
     "מחפשת את המשרה",
-    "looking for my first",
+    " מחפש ",
+    " מחפשת ",
     "open to work",
+    "looking for my first",
+    "looking for a junior role",
+    "seeking a position",
+    "excited to share",
+    "אשמח לעזרתכם",
     "סיימתי קורס",
     "האקריו",
     "hackeru",
-    "תיק עבודות",
-    "אשמח לעזרתכם",
-    "לייק קטן",
-    "תגובה מגניבה",
-    "looking for a junior role",
-    "looking for a full-stack",
+    # Thought leadership, articles, podcasts, webinars & tips
+    "futureofwork",
+    "webinar",
+    "podcast",
+    "newsletter",
+    "tips for",
+    "career advice",
+    "thought leadership",
+    "how to",
+    "השתתפתי",
+    "הרצאה",
+    "וובינר",
+    "טיפים",
+    "תכנית",
+    "קורס",
+    "מחזור",
+    "סדנא",
+    "מנטור",
     # Irrelevant professions
     "lawyer",
     "legal",
     "עורך דין",
     "משפטים",
     "marketing",
+    "sales",
 ]
 
 # ---------------------------------------------------------------------------
@@ -130,23 +155,23 @@ def send_telegram_message(text):
 def is_relevant(title, snippet):
   text = f"{title} {snippet}".lower()
 
-  # 1. Immediately reject job seekers or irrelevant posts
+  # 1. Reject articles, job seekers, and advice posts
   if any(bad in text for bad in EXCLUDE_WORDS):
     return False
 
   # 2. Must explicitly mention "Junior"
-  if "junior" not in text and "ג'וניור" not in text and "גוניור" not in text:
+  if not any(j in text for j in ["junior", "ג'וניור", "גוניור"]):
     return False
 
-  # 3. Must contain at least one HIRING indicator (Employer focus)
+  # 3. Must contain clear employer hiring intent
   if not any(hiring in text for hiring in HIRING_INDICATORS):
     return False
 
-  # 4. Must match relevant tech keywords
-  if any(tech in text for tech in REQUIRED_TECH):
-    return True
+  # 4. Must match target software / AI developer roles
+  if not any(role in text for role in TARGET_ROLES):
+    return False
 
-  return False
+  return True
 
 
 def fetch_google_results(query):
@@ -155,12 +180,9 @@ def fetch_google_results(query):
     return []
 
   url = "https://google.serper.dev/search"
-
-  # 'tbs': 'qdr:w' restricts Google Search results strictly to the PAST WEEK
   payload = json.dumps(
       {"q": query, "gl": "il", "hl": "en", "num": 10, "tbs": "qdr:w"}
   )
-
   headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
 
   try:
